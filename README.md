@@ -70,6 +70,8 @@ With https://github.com/EloiStree/s2w
 
 ------------
 
+NOTE: I NEED TO CHECK FOR SPELLING IT IS 2AM and I am sleeping on the keyboard.
+
 # How to create telemetry from Hordes.io
 
 Install Firefox:
