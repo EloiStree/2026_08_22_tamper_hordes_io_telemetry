@@ -55,6 +55,11 @@ With https://github.com/EloiStree/s2w
 - Save your code on Git and use the project as part of your portfolio when applying for a junior developer position.
   - If you can complete all the previous steps, you have a solid coding level—and you clearly enjoy math. 😊
 
+World of Warcraft version of this exercise:   
+[<img width="852" height="389" alt="image" src="https://github.com/user-attachments/assets/ba35fcc1-b7ea-4aa1-8bf5-271ded48ab43" />](https://youtu.be/qxmC8YoRqHY?t=16423)    
+_With color scrapping_     
+
+
 ### Workshop: Challenges
 
 **Wow Head Client**:
