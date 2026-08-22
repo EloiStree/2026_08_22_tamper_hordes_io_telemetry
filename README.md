@@ -60,8 +60,19 @@ It only work with server on the computer:
 Change the port if needed.
 `ws://localhost:7072`
 
-Now you need a code to be webserver:
-- In godot https://github.com/EloiStree/2025_10_28_gdp_trusted_websocket
+Now you need a code to be webserver.   
+
+You can use my Godot listener:
+- Godot: https://github.com/EloiStree/2025_10_28_gdp_trusted_websocket
+
+Or the python script I was using to redirect the websocket server to a udp target:
+[https://github.com/EloiStree/S2W/.../LocalWebsocketServerToLocalUDP.py](https://github.com/EloiStree/S2W/blob/ee7ca095806e0479bd8a9953fb16876f8b681e43/PythonBridge/LocalWebsocketServerToLocalUDP.py)   
+
+For Rust user:
+https://crates.io/crates/tokio-tungstenite
+
+
+
 
 
 
