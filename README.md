@@ -16,7 +16,7 @@ If you find bots, report them.
   
 Hordes.io is a small island, so you will be quickly spotted and banned anyway.     
   
-If Dek, the creator of Hordes.io, reads this message:     
+If `Dek`, the creator of Hordes.io, reads this message:     
 - Add code to block the game when Tampermonkey is detected in the addons.  
 - Add code to detect whether Selenium is being used.  
     
@@ -71,7 +71,15 @@ _With color scrapping_
   - For inspiration, see [WoW Auction House](https://wowauction.us/commodities/eu/Fel%20Iron%20Ore?realm=aegwynn).  
 - **Bonus:** Detect price patterns that could be associated with black-market bots and use the data to help Dek identify suspicious activity.  
   - Bot users can sometimes be detected through auction anomalies because they may use the Auction House to transfer gold.  
-    
+
+**Healer at start town**:
+- Create a PNJ at the start point that detect player and heal them when they dont have full life
+
+**Group Healer**: 
+- Scrap the group information of the HTML page and heal the player with a shaman to keep them alive.
+
+**Help leveling bots**: 
+- Try to improve the official leveling bots in game created by `Dek` by gathering surrounding mob to the arena center.
   
 ------------  
   
