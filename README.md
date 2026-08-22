@@ -33,6 +33,9 @@ So, be gentle, discreet, and harmless if you are learning to make bots for fun i
 
 ### The Workshop: Movement
 
+Learn how to inject or simulate keyboard stroke first.   
+With https://github.com/EloiStree/s2w  
+
 - Try to move the player:
   - Move left and right.
   - Rotate.
