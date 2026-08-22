@@ -19,11 +19,12 @@ Hordes.io is a small island, so you will be quickly spotted and banned anyway.
 If Dek, the creator of Hordes.io, reads this message:   
 - Add code to block the game when Tampermonkey is detected in the addons.
 - Add code to detect whether Selenium is being used.
-Block these tools if they are detected.  
-They are not a lots of them and they are the two main one.   
+  
+Block these tools if they are detected.      
+They are not a lots of them and they are the two main one.      
 
-Making bots is one of the best ways to learn how to fight them.   
-So, feel free to learn for educational purposes about how this works.   
+Making bots is one of the best ways to learn how to fight them.     
+So, feel free to learn for educational purposes about how this works.     
 
 Note: Creating a bot is not against the law.     
 However, if you harm the community by botting, I would not risk it.     
