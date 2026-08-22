@@ -1,4 +1,4 @@
-# Hordes.io Telemetry
+<img width="559" height="308" alt="image" src="https://github.com/user-attachments/assets/a8dda1a3-8a5b-4b84-a588-2c5c93eeca63" /># Hordes.io Telemetry
 
 > Create Hordes Io Telemetry with Tamper Monkey
 
@@ -70,6 +70,225 @@ Or the python script I was using to redirect the websocket server to a udp targe
 
 For Rust user:
 https://crates.io/crates/tokio-tungstenite
+
+
+Example in Godot:
+
+Download Godot
+[<img width="1344" height="479" alt="image" src="https://github.com/user-attachments/assets/1acdeee3-55f0-43a9-a076-4e00b3d1531e" />](https://godotengine.org/releases/4.7/)   
+https://godotengine.org/releases/4.7/
+
+Create a project
+<img width="1133" height="641" alt="image" src="https://github.com/user-attachments/assets/58591382-754c-48e5-8abb-cb8392ff4da2" />
+
+Download with git clone if you know how the addons.
+```
+git clone https://github.com/EloiStree/2025_10_28_gdp_trusted_websocket.git addons/2025_10_28_gdp_trusted_websocket
+```
+
+Else download the zip https://github.com/EloiStree/2025_10_28_gdp_trusted_websocket
+[<img width="972" height="491" alt="image" src="https://github.com/user-attachments/assets/fc28edfd-d6ea-4830-87f7-07b3eab6c1a6" />](https://github.com/EloiStree/2025_10_28_gdp_trusted_websocket)  
+https://github.com/EloiStree/2025_10_28_gdp_trusted_websocket    
+
+Go in import of asset store
+<img width="929" height="254" alt="image" src="https://github.com/user-attachments/assets/b878d44e-1d6e-4dfa-940f-ac9c19121efd" />
+
+Aim the Zip
+<img width="728" height="304" alt="image" src="https://github.com/user-attachments/assets/a0273ee6-8263-46bf-ba75-39a1e0296735" />
+
+Import the addons
+<img width="772" height="603" alt="image" src="https://github.com/user-attachments/assets/e583b556-c17f-40b3-9137-def493a9d6b6" />
+
+Move it in a folder addons
+<img width="913" height="239" alt="image" src="https://github.com/user-attachments/assets/6d0415d4-095a-4d9a-b93b-2efea8028637" />
+
+Add a server
+<img width="1152" height="344" alt="image" src="https://github.com/user-attachments/assets/cbb7208a-bae0-4e7c-89bd-5716065b8a9a" />
+
+Change the port
+<img width="493" height="275" alt="image" src="https://github.com/user-attachments/assets/cd7add2e-9588-40cb-8a5f-b4db5ad2e123" />
+
+The server give you the received message with the peer(user id)
+If you read this text I will add a any peer to listen at incoming text.
+<img width="908" height="626" alt="image" src="https://github.com/user-attachments/assets/b4bbe4a4-dda6-43bc-b7bc-e732456d9474" />
+
+
+
+
+______________
+
+# Behind the vibed code.
+
+I gave a code I did a long time ago the to hack Scratch (https://scratch.mit.edu/) to an AI to vibe code this one.
+
+
+**You can only aim localhost with WS**
+Browser are very protected to avoid hacker to do harms.
+You can contact Secure Web Socket from Tamper Monkey Script.
+But setup a server in that is secure is out of beginner reach.
+
+So my solution is to send the information on a local webserver in python that him know how to redirection to the target of the moment: Unity, Godot, MQTT, UDP...
+
+Note: If you are blocked it may be because you need to unlock unsecure websocket in the security setting
+<img width="559" height="308" alt="image" src="https://github.com/user-attachments/assets/bde52468-01b7-4844-950d-db55746640a2" />
+
+**Unity3D does not have server websocket**
+You can add some websocket in Unity3D with some external tool but that are not multiplatform.
+
+
+The header is there to give information but also to make sure the script only run on the page you want.
+```
+// ==UserScript==
+// @name         Hordes.io Player Data to Local WebSocket
+// @namespace    http://tampermonkey.net/
+// @version      5.0
+// @description  Send Hordes.io game data to a local WebSocket server
+// @match        https://hordes.io/*
+// @grant        none
+// ==/UserScript==
+```
+
+Change name to what you need
+```
+// @name         Hordes.io Player Data to Local WebSocket
+```
+
+Make sure it run on the website you want to scrap (here the hordes.io)
+```
+// @match        https://hordes.io/*
+```
+
+The following part allows to create a web socket client.
+```   
+const socketUrl = 'ws://localhost:7072';
+let socket = null;  
+try {
+
+        socket = new WebSocket(socketUrl);
+
+
+        socket.addEventListener(
+            'open',
+            function() {
+
+                connectionInProgress = false;
+                isConnectionValid = true;
+
+                console.log(
+                    '[Hordes.io WS] Connected to ' +
+                    socketUrl
+                );
+            }
+        );
+
+
+        socket.addEventListener(
+            'message',
+            function(event) {
+
+                debugLog(
+                    'Server message: ' +
+                    event.data
+                );
+            }
+        );
+
+
+        socket.addEventListener(
+            'close',
+            function() {
+
+                connectionInProgress = false;
+                isConnectionValid = false;
+
+                debugLog(
+                    'WebSocket connection closed'
+                );
+            }
+        );
+
+
+        socket.addEventListener(
+            'error',
+            function(error) {
+
+                connectionInProgress = false;
+                isConnectionValid = false;
+
+                console.error(
+                    '[Hordes.io WS] WebSocket error:',
+                    error
+                );
+            }
+        );
+
+    } catch (error) {
+
+        connectionInProgress = false;
+        isConnectionValid = false;
+
+        console.error(
+            '[Hordes.io WS] Connection error:',
+            error
+        );
+    }
+```
+
+You can look around for class with that code
+```
+const elements =  document.querySelectorAll('.textyellow');
+```
+And extract the content of it like that
+```
+  const text = elements[i].textContent.trim();
+```
+
+
+Use your knowedge of javascript or your best vibing skills to scrap and extract data to a text to send.
+
+And then check if the webscoket is still on
+```
+ if (
+            !socket ||
+            socket.readyState !==
+            WebSocket.OPEN
+        ) {
+            return;
+        }
+```
+
+To send the data
+```
+        socket.send(message);
+```
+
+If the data change yo avoid spamming
+```
+if (
+            message ===
+            previousData
+        ) {
+            return;
+        }
+```
+
+
+
+I am not a javascript or typescript developer.
+So dont take those code seriously.
+
+The only aim here to scrap data on the momement.
+
+Note that if anything change in the website you scrap, you need to adjust the code.
+
+So try to understand how to establish a websocket connection and how to parse the data to an abstract format you want.
+Then tweek the script when something broke.
+
+Have fun.   
+Hope you learn some stuff here.   
+
+
+
 
 
 
