@@ -1,657 +1,1616 @@
 // ==UserScript==
-// @name         Hordes.io Chat -> Local WebSocket
+// @name         Hordes.io Player Data to Local WebSocket
 // @namespace    http://tampermonkey.net/
-// @version      0.2
-// @description  Export Hordes.io game chat to a local WebSocket server
-// @author       You
+// @version      5.0
+// @description  Send Hordes.io game data to a local WebSocket server
 // @match        https://hordes.io/*
 // @grant        none
 // ==/UserScript==
 
-(function () {
+(function() {
     'use strict';
 
-    console.log("[Hordes.io WS] Chat exporter starting...");
+
+    // ============================================================
+    // SETTINGS
+    // ============================================================
+
+    const socketUrl = 'ws://localhost:7072';
+
+    const dataCheckInterval = 15;
+
+    const reconnectInterval = 1000;
+
+    const useConsoleDebug = true;
 
 
     // ============================================================
-    // CONFIGURATION
+    // VARIABLES
     // ============================================================
 
-    const socketUrl = "ws://localhost:7072";
+    let socket = null;
 
-    const SCAN_INTERVAL = 250;
+    let connectionInProgress = false;
+
+    let isConnectionValid = false;
+
+    let previousData = '';
+
+
+    // ============================================================
+    // DEBUG
+    // ============================================================
+
+    function debugLog(message) {
+
+        if (useConsoleDebug) {
+            console.log('[Hordes.io WS] ' + message);
+        }
+    }
 
 
     // ============================================================
     // WEBSOCKET
     // ============================================================
 
-    let socket = null;
-    let isConnected = false;
-
-
-    function connectWebSocket() {
+    function reconnectIfOffline() {
 
         if (
             socket &&
-            (
-                socket.readyState === WebSocket.OPEN ||
-                socket.readyState === WebSocket.CONNECTING
-            )
+            socket.readyState === WebSocket.OPEN
         ) {
+            isConnectionValid = true;
             return;
         }
 
-        console.log(
-            "[Hordes.io WS] Connecting to " + socketUrl
+
+        if (connectionInProgress) {
+            return;
+        }
+
+
+        connectionInProgress = true;
+        isConnectionValid = false;
+
+
+        debugLog(
+            'Connecting to ' + socketUrl
         );
+
 
         try {
 
             socket = new WebSocket(socketUrl);
 
 
-            socket.addEventListener("open", function () {
+            socket.addEventListener(
+                'open',
+                function() {
 
-                isConnected = true;
+                    connectionInProgress = false;
+                    isConnectionValid = true;
 
-                console.log(
-                    "[Hordes.io WS] Connected to " + socketUrl
-                );
-            });
-
-
-            socket.addEventListener("close", function () {
-
-                isConnected = false;
-
-                console.log(
-                    "[Hordes.io WS] Connection closed. Retrying..."
-                );
-            });
+                    console.log(
+                        '[Hordes.io WS] Connected to ' +
+                        socketUrl
+                    );
+                }
+            );
 
 
-            socket.addEventListener("error", function (error) {
+            socket.addEventListener(
+                'message',
+                function(event) {
 
-                isConnected = false;
+                    debugLog(
+                        'Server message: ' +
+                        event.data
+                    );
+                }
+            );
 
-                console.error(
-                    "[Hordes.io WS] WebSocket error:",
-                    error
-                );
-            });
+
+            socket.addEventListener(
+                'close',
+                function() {
+
+                    connectionInProgress = false;
+                    isConnectionValid = false;
+
+                    debugLog(
+                        'WebSocket connection closed'
+                    );
+                }
+            );
 
 
-            socket.addEventListener("message", function (event) {
+            socket.addEventListener(
+                'error',
+                function(error) {
 
-                console.log(
-                    "[Hordes.io WS] Server:",
-                    event.data
-                );
-            });
+                    connectionInProgress = false;
+                    isConnectionValid = false;
 
-        }
-        catch (error) {
+                    console.error(
+                        '[Hordes.io WS] WebSocket error:',
+                        error
+                    );
+                }
+            );
 
-            isConnected = false;
+        } catch (error) {
+
+            connectionInProgress = false;
+            isConnectionValid = false;
 
             console.error(
-                "[Hordes.io WS] Connection exception:",
+                '[Hordes.io WS] Connection error:',
                 error
             );
         }
     }
 
 
-    setInterval(
-        connectWebSocket,
-        1000
-    );
-
-    connectWebSocket();
-
-
     // ============================================================
-    // SEND TEXT TO SERVER
+    // NUMBER
     // ============================================================
 
-    function sendToServer(data) {
+    function parseNumber(text) {
 
         if (
-            !socket ||
-            socket.readyState !== WebSocket.OPEN
+            text === null ||
+            text === undefined
         ) {
-            console.log(
-                "[Hordes.io WS] Server not connected. Message skipped."
-            );
-
-            return;
+            return null;
         }
 
 
-        /*
-         * Example:
-         *
-         * type:chat
-         * time:21.59
-         * channel:faction
-         * level:45
-         * class_icon:1
-         * sender:gurok
-         * message:2k too low sry
-         *
-         */
-
-        const lines = [];
+        const cleaned =
+            String(text)
+                .replace(/,/g, '')
+                .trim();
 
 
-        for (const key in data) {
-
-            if (
-                data[key] !== undefined &&
-                data[key] !== null
-            ) {
-
-                lines.push(
-                    key +
-                    ":" +
-                    String(data[key])
-                        .replace(/\r?\n/g, " ")
-                );
-            }
+        if (cleaned === '') {
+            return null;
         }
 
 
-        /*
-         * Empty line separates messages.
-         */
-
-        const message =
-            lines.join("\n") +
-            "\n\n";
+        const value = Number(cleaned);
 
 
-        socket.send(message);
+        if (Number.isNaN(value)) {
+            return null;
+        }
 
 
-        console.log(
-            "[Hordes.io WS] Chat sent:\n" +
-            message
-        );
+        return value;
     }
 
 
     // ============================================================
-    // GET CLASS ICON ID
+    // RESOURCE
     // ============================================================
 
-    function getClassIconId(senderElement) {
+    function parseResource(text) {
 
-        if (!senderElement) {
-            return "";
+        if (!text) {
+
+            return {
+                current: null,
+                max: null
+            };
         }
 
 
-        /*
-         * Look specifically for:
-         *
-         * /data/ui/classes/0.avif
-         * /data/ui/classes/1.avif
-         * /data/ui/classes/2.avif
-         * etc.
-         *
-         * This intentionally does NOT match:
-         *
-         * /data/ui/icons/gem.svg
-         */
+        const cleaned =
+            text.replace(/\s/g, '');
 
 
-        const images =
-            senderElement.querySelectorAll("img");
+        const parts =
+            cleaned.split('/');
 
 
-        for (const img of images) {
+        if (parts.length !== 2) {
 
-            const src =
-                img.getAttribute("src") || "";
+            return {
+                current: null,
+                max: null
+            };
+        }
 
+
+        return {
+
+            current:
+                parseNumber(parts[0]),
+
+            max:
+                parseNumber(parts[1])
+        };
+    }
+
+
+    // ============================================================
+    // POSITION
+    // ============================================================
+
+    function getPosition() {
+
+        const elements =
+            document.querySelectorAll('.textyellow');
+
+
+        for (
+            let i = 0;
+            i < elements.length;
+            i++
+        ) {
+
+            const text =
+                elements[i].textContent.trim();
+
+
+            if (!text) {
+                continue;
+            }
+
+
+            const match = text.match(
+                /^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/
+            );
+
+
+            if (!match) {
+                continue;
+            }
+
+
+            return {
+
+                x: Number(match[1]),
+
+                y: Number(match[2]),
+
+                z: Number(match[3])
+            };
+        }
+
+
+        return null;
+    }
+
+
+    // ============================================================
+    // PLAYER / TARGET
+    // ============================================================
+
+    function getUnitData(id) {
+
+        const unit =
+            document.getElementById(id);
+
+
+        if (!unit) {
+
+            return {
+
+                name: '',
+                level: null,
+                life: null,
+                life_max: null,
+                mana: null,
+                mana_max: null
+            };
+        }
+
+
+        const healthBar =
+            unit.querySelector(
+                '.progressBar.bghealth, .progressBar.bgenemy'
+            );
+
+
+        let name = '';
+
+        let life = null;
+
+        let lifeMax = null;
+
+
+        if (healthBar) {
+
+            const nameElement =
+                healthBar.querySelector('.left');
+
+
+            if (nameElement) {
+
+                name =
+                    nameElement.textContent.trim();
+            }
+
+
+            const lifeElement =
+                healthBar.querySelector('.right');
+
+
+            if (lifeElement) {
+
+                const lifeData =
+                    parseResource(
+                        lifeElement.textContent
+                    );
+
+
+                life =
+                    lifeData.current;
+
+                lifeMax =
+                    lifeData.max;
+            }
+        }
+
+
+        const manaBar =
+            unit.querySelector(
+                '.progressBar.bgmana'
+            );
+
+
+        let level = null;
+
+        let mana = null;
+
+        let manaMax = null;
+
+
+        if (manaBar) {
+
+            const levelElement =
+                manaBar.querySelector('.left');
+
+
+            if (levelElement) {
+
+                const levelMatch =
+                    levelElement.textContent.match(
+                        /Lv\.\s*(\d+)/
+                    );
+
+
+                if (levelMatch) {
+
+                    level =
+                        Number(levelMatch[1]);
+                }
+            }
+
+
+            const manaElement =
+                manaBar.querySelector('.right');
+
+
+            if (manaElement) {
+
+                const manaData =
+                    parseResource(
+                        manaElement.textContent
+                    );
+
+
+                mana =
+                    manaData.current;
+
+                manaMax =
+                    manaData.max;
+            }
+        }
+
+
+        return {
+
+            name: name,
+
+            level: level,
+
+            life: life,
+
+            life_max: lifeMax,
+
+            mana: mana,
+
+            mana_max: manaMax
+        };
+    }
+
+
+    // ============================================================
+    // CHARACTER WINDOW
+    // ============================================================
+
+    function getCharacterData() {
+
+        const windows =
+            document.querySelectorAll(
+                '.window.panel-black'
+            );
+
+
+        let characterWindow = null;
+
+
+        for (
+            let i = 0;
+            i < windows.length;
+            i++
+        ) {
+
+            const text =
+                windows[i].textContent;
+
+
+            if (
+                text &&
+                text.includes('Character') &&
+                text.includes('Strength') &&
+                text.includes('Dexterity')
+            ) {
+
+                characterWindow =
+                    windows[i];
+
+                break;
+            }
+        }
+
+
+        if (!characterWindow) {
+
+            return null;
+        }
+
+
+        // --------------------------------------------------------
+        // Find value belonging to a label
+        // --------------------------------------------------------
+
+        function getValue(label) {
+
+            const spans =
+                characterWindow.querySelectorAll(
+                    'span'
+                );
+
+
+            for (
+                let i = 0;
+                i < spans.length;
+                i++
+            ) {
+
+                const span =
+                    spans[i];
+
+
+                if (
+                    span.children.length === 0 &&
+                    span.textContent.trim() === label
+                ) {
+
+                    const next =
+                        span.nextElementSibling;
+
+
+                    if (next) {
+
+                        return next.textContent
+                            .trim();
+                    }
+                }
+            }
+
+
+            return null;
+        }
+
+
+        // --------------------------------------------------------
+        // BASIC
+        // --------------------------------------------------------
+
+        const name =
+            getValue('Name');
+
+
+        const level =
+            getValue('Level');
+
+
+        const characterClass =
+            getValue('Class');
+
+
+        const faction =
+            getValue('Faction');
+
+
+        const prestigeText =
+            getValue('Prestige');
+
+
+        const rating =
+            getValue('Rating');
+
+
+        const medals =
+            getValue('Medals');
+
+
+        // --------------------------------------------------------
+        // PRESTIGE
+        // --------------------------------------------------------
+
+        let prestige = null;
+
+        let prestigeMax = null;
+
+        let prestigeRank = null;
+
+        let prestigeRankMax = null;
+
+
+        if (prestigeText) {
 
             const match =
-                src.match(
-                    /\/data\/ui\/classes\/(\d+)\.avif/
+                prestigeText.match(
+                    /([\d,]+)\s*\/\s*([\d,]+)\s*\(Rank\s*(\d+)\s*\/\s*(\d+)\)/
                 );
 
 
             if (match) {
 
-                return parseInt(
-                    match[1],
-                    10
-                );
+                prestige =
+                    parseNumber(match[1]);
+
+                prestigeMax =
+                    parseNumber(match[2]);
+
+                prestigeRank =
+                    Number(match[3]);
+
+                prestigeRankMax =
+                    Number(match[4]);
             }
         }
 
 
-        return "";
-    }
+        // --------------------------------------------------------
+        // ATTRIBUTES
+        // --------------------------------------------------------
 
+        const strength =
+            getValue('Strength');
 
-    // ============================================================
-    // PARSE CHAT ARTICLE
-    // ============================================================
+        const stamina =
+            getValue('Stamina');
 
-    function parseChatArticle(article) {
+        const dexterity =
+            getValue('Dexterity');
 
-        if (!article) {
-            return null;
-        }
+        const intelligence =
+            getValue('Intelligence');
+
+        const wisdom =
+            getValue('Wisdom');
+
+        const luck =
+            getValue('Luck');
+
+        const statPoints =
+            getValue('Stat Points');
 
 
         // --------------------------------------------------------
-        // TIME
+        // COMBAT
         // --------------------------------------------------------
 
-        const timeElement =
-            article.querySelector(".time");
+        const hp =
+            getValue('HP');
 
+        const hpRegen =
+            getValue('HP Reg./5s');
 
-        const time =
-            timeElement
-                ? timeElement.textContent.trim()
-                : "";
+        const mp =
+            getValue('MP');
 
+        const mpRegen =
+            getValue('MP Reg./5s');
 
-        // --------------------------------------------------------
-        // CHANNEL
-        // --------------------------------------------------------
+        const defense =
+            getValue('Defense');
 
-        const channelElement =
-            article.querySelector(".channel");
+        const block =
+            getValue('Block');
 
+        const minDamage =
+            getValue('Min Dmg.');
 
-        const channel =
-            channelElement
-                ? channelElement.textContent.trim()
-                : "";
+        const maxDamage =
+            getValue('Max Dmg.');
 
+        const attackSpeed =
+            getValue('Attack Spd.');
 
-        // --------------------------------------------------------
-        // SENDER
-        // --------------------------------------------------------
+        const critical =
+            getValue('Critical');
 
-        const senderElement =
-            article.querySelector(".sender");
+        const haste =
+            getValue('Haste');
 
+        const moveSpeed =
+            getValue('Move Spd.');
 
-        let sender = "";
-        let level = "";
-        let classIcon = "";
+        const bagSlots =
+            getValue('Bag Slots');
 
+        const itemFind =
+            getValue('Item Find');
 
-        if (senderElement) {
+        const gearScore =
+            getValue('Gear Score');
 
-            // ----------------------------------------------------
-            // NAME
-            // ----------------------------------------------------
-
-            const nameElement =
-                senderElement.querySelector(".name");
-
-
-            if (nameElement) {
-
-                sender =
-                    nameElement.textContent.trim();
-            }
-
-
-            // ----------------------------------------------------
-            // LEVEL
-            // ----------------------------------------------------
-
-            const textWhite =
-                senderElement.querySelector(
-                    ".textwhite"
-                );
-
-
-            if (textWhite) {
-
-                const text =
-                    textWhite.textContent.trim();
-
-
-                const match =
-                    text.match(/(\d+)/);
-
-
-                if (match) {
-
-                    level =
-                        parseInt(
-                            match[1],
-                            10
-                        );
-                }
-            }
-
-
-            // ----------------------------------------------------
-            // CLASS ICON
-            // ----------------------------------------------------
-
-            classIcon =
-                getClassIconId(
-                    senderElement
-                );
-        }
+        const pvpLevel =
+            getValue('PvP Level');
 
 
         // --------------------------------------------------------
-        // MESSAGE
+        // EQUIPMENT
         // --------------------------------------------------------
 
-        let message = "";
+        const equipment = [];
 
 
-        const lineWrap =
-            article.querySelector(
-                ".linewrap"
+        const equipmentContainer =
+            characterWindow.querySelector(
+                '#equipslots'
             );
 
 
-        if (lineWrap) {
+        if (equipmentContainer) {
 
-            const spans =
-                lineWrap.querySelectorAll(
-                    "span"
+            const slots =
+                equipmentContainer.querySelectorAll(
+                    '.slot'
                 );
 
 
-            for (const span of spans) {
+            for (
+                let i = 0;
+                i < slots.length;
+                i++
+            ) {
 
-                /*
-                 * Ignore metadata.
-                 */
-
-                if (
-                    span.classList.contains("time") ||
-                    span.classList.contains("content") ||
-                    span.classList.contains("sender") ||
-                    span.classList.contains("channel") ||
-                    span.classList.contains("name") ||
-                    span.classList.contains("textwhite")
-                ) {
-                    continue;
-                }
+                const image =
+                    slots[i].querySelector(
+                        'img.icon'
+                    );
 
 
-                /*
-                 * Ignore anything inside sender.
-                 */
+                if (image) {
 
-                if (span.closest(".sender")) {
-                    continue;
-                }
-
-
-                const text =
-                    span.textContent.trim();
+                    const src =
+                        image.getAttribute(
+                            'src'
+                        );
 
 
-                if (text) {
+                    if (src) {
 
-                    message = text;
-
-                    break;
+                        equipment.push(src);
+                    }
                 }
             }
         }
 
 
         // --------------------------------------------------------
-        // GM / SYSTEM MESSAGE
+        // RETURN
         // --------------------------------------------------------
 
-        if (!message) {
+        return {
 
-            const gmElement =
-                article.querySelector(
-                    ".textGM:not(.content)"
-                );
+            name:
+                name || '',
+
+            level:
+                parseNumber(level),
+
+            class:
+                characterClass || '',
+
+            faction:
+                faction || '',
+
+            prestige:
+                prestige,
+
+            prestige_max:
+                prestigeMax,
+
+            prestige_rank:
+                prestigeRank,
+
+            prestige_rank_max:
+                prestigeRankMax,
+
+            rating:
+                parseNumber(rating),
+
+            medals:
+                parseNumber(medals),
 
 
-            if (gmElement) {
+            strength:
+                parseNumber(strength),
 
-                message =
-                    gmElement.textContent.trim();
+            stamina:
+                parseNumber(stamina),
+
+            dexterity:
+                parseNumber(dexterity),
+
+            intelligence:
+                parseNumber(intelligence),
+
+            wisdom:
+                parseNumber(wisdom),
+
+            luck:
+                parseNumber(luck),
+
+            stat_points:
+                parseNumber(statPoints),
+
+
+            hp:
+                parseNumber(hp),
+
+            hp_regen:
+                parseNumber(hpRegen),
+
+            mp:
+                parseNumber(mp),
+
+            mp_regen:
+                parseNumber(mpRegen),
+
+            defense:
+                parseNumber(defense),
+
+            block:
+                block,
+
+            min_damage:
+                parseNumber(minDamage),
+
+            max_damage:
+                parseNumber(maxDamage),
+
+            attack_speed:
+                parseNumber(attackSpeed),
+
+            critical:
+                critical,
+
+            haste:
+                haste,
+
+            move_speed:
+                parseNumber(moveSpeed),
+
+            bag_slots:
+                parseNumber(bagSlots),
+
+            item_find:
+                itemFind,
+
+            gear_score:
+                parseNumber(gearScore),
+
+            pvp_level:
+                parseNumber(pvpLevel),
+
+            equipment:
+                equipment
+        };
+    }
+
+
+    // ============================================================
+    // INVENTORY
+    // ============================================================
+
+    function getInventoryData() {
+
+        /*
+         * Find the Inventory window.
+         *
+         * We deliberately don't use the generated Svelte
+         * class names because they can change.
+         */
+
+        const windows =
+            document.querySelectorAll(
+                '.window.panel-black'
+            );
+
+
+        let inventoryWindow = null;
+
+
+        for (
+            let i = 0;
+            i < windows.length;
+            i++
+        ) {
+
+            const text =
+                windows[i].textContent;
+
+
+            if (
+                text &&
+                text.includes('Inventory') &&
+                windows[i].querySelector(
+                    '[id^="bag"]'
+                )
+            ) {
+
+                inventoryWindow =
+                    windows[i];
+
+                break;
             }
         }
 
 
-        // --------------------------------------------------------
-        // VALIDATION
-        // --------------------------------------------------------
+        if (!inventoryWindow) {
 
-        if (!message) {
             return null;
         }
 
 
-        // --------------------------------------------------------
-        // RESULT
-        // --------------------------------------------------------
+        // ========================================================
+        // BAG
+        // ========================================================
 
-        const result = {
+        const items = [];
 
-            type: "chat",
 
-            time: time,
+        const bagSlots =
+            inventoryWindow.querySelectorAll(
+                '[id^="bag"]'
+            );
 
-            channel: channel,
 
-            level: level,
+        for (
+            let i = 0;
+            i < bagSlots.length;
+            i++
+        ) {
 
-            class_icon: classIcon,
+            const slot =
+                bagSlots[i];
 
-            sender: sender,
 
-            message: message
+            const id =
+                slot.id;
+
+
+            /*
+             * Get the item image.
+             *
+             * Empty slots use:
+             *
+             * /data/ui/slotbg/bg.avif
+             *
+             * Therefore we ignore those.
+             */
+
+            const image =
+                slot.querySelector(
+                    'img.icon'
+                );
+
+
+            if (!image) {
+                continue;
+            }
+
+
+            const src =
+                image.getAttribute('src');
+
+
+            if (!src) {
+                continue;
+            }
+
+
+            if (
+                src.includes(
+                    '/data/ui/slotbg/'
+                )
+            ) {
+                continue;
+            }
+
+
+            // ----------------------------------------------------
+            // SLOT NUMBER
+            // ----------------------------------------------------
+
+            const slotMatch =
+                id.match(/^bag(\d+)$/);
+
+
+            if (!slotMatch) {
+                continue;
+            }
+
+
+            const slotNumber =
+                Number(slotMatch[1]);
+
+
+            // ----------------------------------------------------
+            // STACK AMOUNT
+            // ----------------------------------------------------
+
+            const stackElement =
+                slot.querySelector(
+                    '.slottext.stacks'
+                );
+
+
+            let amount = 1;
+
+
+            if (stackElement) {
+
+                const stackText =
+                    stackElement.textContent.trim();
+
+
+                /*
+                 * Keep +1 exactly as displayed for equipment
+                 * enhancement-style values.
+                 *
+                 * Normal stacks such as "38" become 38.
+                 */
+
+                const parsed =
+                    parseNumber(stackText);
+
+
+                if (parsed !== null) {
+
+                    amount = parsed;
+
+                } else {
+
+                    amount = stackText;
+                }
+            }
+
+
+            items.push({
+
+                slot:
+                    slotNumber,
+
+                id:
+                    src,
+
+                amount:
+                    amount
+            });
+        }
+
+
+        // ========================================================
+        // GOLD / SILVER / COPPER / GEMS
+        // ========================================================
+
+        let gold = null;
+
+        let silver = null;
+
+        let copper = null;
+
+        let gems = null;
+
+
+        /*
+         * The currency panel has classes:
+         *
+         * .gold
+         *
+         * and contains the colored text spans.
+         */
+
+        const currencyPanel =
+            inventoryWindow.querySelector(
+                '.panel-black.gold'
+            );
+
+
+        if (currencyPanel) {
+
+            const text =
+                currencyPanel.textContent
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+
+            /*
+             * Example:
+             *
+             * 17 64 68
+             */
+
+            const numbers =
+                text.match(
+                    /\d[\d,]*/g
+                );
+
+
+            if (numbers && numbers.length >= 3) {
+
+                gold =
+                    parseNumber(numbers[0]);
+
+                silver =
+                    parseNumber(numbers[1]);
+
+                copper =
+                    parseNumber(numbers[2]);
+            }
+        }
+
+
+        /*
+         * Gems are in a second .gold panel.
+         *
+         * It contains:
+         *
+         * gem icon + 130
+         */
+
+        const goldPanels =
+            inventoryWindow.querySelectorAll(
+                '.panel-black.gold'
+            );
+
+
+        for (
+            let i = 0;
+            i < goldPanels.length;
+            i++
+        ) {
+
+            const panel =
+                goldPanels[i];
+
+
+            if (
+                panel.querySelector(
+                    'img[src*="/icons/gem"]'
+                )
+            ) {
+
+                const gemText =
+                    panel.textContent.trim();
+
+
+                const gemNumber =
+                    gemText.match(
+                        /\d[\d,]*/
+                    );
+
+
+                if (gemNumber) {
+
+                    gems =
+                        parseNumber(
+                            gemNumber[0]
+                        );
+                }
+            }
+        }
+
+
+        // ========================================================
+        // RETURN
+        // ========================================================
+
+        return {
+
+            items:
+                items,
+
+            gold:
+                gold,
+
+            silver:
+                silver,
+
+            copper:
+                copper,
+
+            gems:
+                gems
         };
-
-
-        return result;
     }
 
 
     // ============================================================
-    // DUPLICATE DETECTION
+    // ALL DATA
     // ============================================================
 
-    const seenMessages =
-        new Set();
+    function extractData() {
 
+        return {
 
-    function getFingerprint(data) {
+            position:
+                getPosition(),
 
-        return [
+            player:
+                getUnitData('ufplayer'),
 
-            data.time,
+            target:
+                getUnitData('uftarget'),
 
-            data.channel,
+            character:
+                getCharacterData(),
 
-            data.level,
-
-            data.class_icon,
-
-            data.sender,
-
-            data.message
-
-        ].join("|");
+            inventory:
+                getInventoryData()
+        };
     }
 
 
-    function processArticle(article) {
+    // ============================================================
+    // KEY:VALUE MESSAGE
+    // ============================================================
+
+    function createMessage(data) {
+
+        const lines = [];
+
+
+        // ========================================================
+        // POSITION
+        // ========================================================
+
+        if (data.position) {
+
+            lines.push(
+                'position_x:' +
+                data.position.x
+            );
+
+            lines.push(
+                'position_y:' +
+                data.position.y
+            );
+
+            lines.push(
+                'position_z:' +
+                data.position.z
+            );
+        }
+
+
+        // ========================================================
+        // PLAYER
+        // ========================================================
+
+        if (data.player) {
+
+            lines.push(
+                'player_name:' +
+                data.player.name
+            );
+
+            lines.push(
+                'player_level:' +
+                data.player.level
+            );
+
+            lines.push(
+                'player_life:' +
+                data.player.life
+            );
+
+            lines.push(
+                'player_life_max:' +
+                data.player.life_max
+            );
+
+            lines.push(
+                'player_mana:' +
+                data.player.mana
+            );
+
+            lines.push(
+                'player_mana_max:' +
+                data.player.mana_max
+            );
+        }
+
+
+        // ========================================================
+        // TARGET
+        // ========================================================
+
+        if (data.target) {
+
+            lines.push(
+                'target_name:' +
+                data.target.name
+            );
+
+            lines.push(
+                'target_level:' +
+                data.target.level
+            );
+
+            lines.push(
+                'target_life:' +
+                data.target.life
+            );
+
+            lines.push(
+                'target_life_max:' +
+                data.target.life_max
+            );
+
+            lines.push(
+                'target_mana:' +
+                data.target.mana
+            );
+
+            lines.push(
+                'target_mana_max:' +
+                data.target.mana_max
+            );
+        }
+
+
+        // ========================================================
+        // CHARACTER
+        // ========================================================
+
+        if (data.character) {
+
+            const c =
+                data.character;
+
+
+            lines.push(
+                'character_name:' +
+                c.name
+            );
+
+            lines.push(
+                'character_level:' +
+                c.level
+            );
+
+            lines.push(
+                'character_class:' +
+                c.class
+            );
+
+            lines.push(
+                'character_faction:' +
+                c.faction
+            );
+
+
+            lines.push(
+                'character_prestige:' +
+                c.prestige
+            );
+
+            lines.push(
+                'character_prestige_max:' +
+                c.prestige_max
+            );
+
+            lines.push(
+                'character_prestige_rank:' +
+                c.prestige_rank
+            );
+
+            lines.push(
+                'character_prestige_rank_max:' +
+                c.prestige_rank_max
+            );
+
+
+            lines.push(
+                'character_rating:' +
+                c.rating
+            );
+
+            lines.push(
+                'character_medals:' +
+                c.medals
+            );
+
+
+            lines.push(
+                'character_strength:' +
+                c.strength
+            );
+
+            lines.push(
+                'character_stamina:' +
+                c.stamina
+            );
+
+            lines.push(
+                'character_dexterity:' +
+                c.dexterity
+            );
+
+            lines.push(
+                'character_intelligence:' +
+                c.intelligence
+            );
+
+            lines.push(
+                'character_wisdom:' +
+                c.wisdom
+            );
+
+            lines.push(
+                'character_luck:' +
+                c.luck
+            );
+
+            lines.push(
+                'character_stat_points:' +
+                c.stat_points
+            );
+
+
+            lines.push(
+                'character_hp:' +
+                c.hp
+            );
+
+            lines.push(
+                'character_hp_regen:' +
+                c.hp_regen
+            );
+
+            lines.push(
+                'character_mp:' +
+                c.mp
+            );
+
+            lines.push(
+                'character_mp_regen:' +
+                c.mp_regen
+            );
+
+            lines.push(
+                'character_defense:' +
+                c.defense
+            );
+
+            lines.push(
+                'character_block:' +
+                c.block
+            );
+
+            lines.push(
+                'character_min_damage:' +
+                c.min_damage
+            );
+
+            lines.push(
+                'character_max_damage:' +
+                c.max_damage
+            );
+
+            lines.push(
+                'character_attack_speed:' +
+                c.attack_speed
+            );
+
+            lines.push(
+                'character_critical:' +
+                c.critical
+            );
+
+            lines.push(
+                'character_haste:' +
+                c.haste
+            );
+
+            lines.push(
+                'character_move_speed:' +
+                c.move_speed
+            );
+
+            lines.push(
+                'character_bag_slots:' +
+                c.bag_slots
+            );
+
+            lines.push(
+                'character_item_find:' +
+                c.item_find
+            );
+
+            lines.push(
+                'character_gear_score:' +
+                c.gear_score
+            );
+
+            lines.push(
+                'character_pvp_level:' +
+                c.pvp_level
+            );
+
+
+            // ----------------------------------------------------
+            // EQUIPMENT
+            // ----------------------------------------------------
+
+            for (
+                let i = 0;
+                i < c.equipment.length;
+                i++
+            ) {
+
+                lines.push(
+                    'equipment_' +
+                    (i + 1) +
+                    ':' +
+                    c.equipment[i]
+                );
+            }
+        }
+
+
+        // ========================================================
+        // INVENTORY
+        // ========================================================
+
+        if (data.inventory) {
+
+            const inv =
+                data.inventory;
+
+
+            // ----------------------------------------------------
+            // CURRENCIES
+            // ----------------------------------------------------
+
+            lines.push(
+                'gold:' +
+                inv.gold
+            );
+
+            lines.push(
+                'silver:' +
+                inv.silver
+            );
+
+            lines.push(
+                'copper:' +
+                inv.copper
+            );
+
+            lines.push(
+                'gems:' +
+                inv.gems
+            );
+
+
+            // ----------------------------------------------------
+            // BAG ITEMS
+            // ----------------------------------------------------
+
+            for (
+                let i = 0;
+                i < inv.items.length;
+                i++
+            ) {
+
+                const item =
+                    inv.items[i];
+
+
+                lines.push(
+                    'bag_' +
+                    item.slot +
+                    '_id:' +
+                    item.id
+                );
+
+
+                lines.push(
+                    'bag_' +
+                    item.slot +
+                    '_amount:' +
+                    item.amount
+                );
+            }
+        }
+
+
+        // ========================================================
+        // END MESSAGE
+        // ========================================================
+
+        return lines.join('\n') + '\n';
+    }
+
+
+    // ============================================================
+    // EXTRACT + SEND
+    // ============================================================
+
+    function extractAndSendData() {
 
         if (
-            !article ||
-            !article.matches("article.line")
+            !socket ||
+            socket.readyState !==
+            WebSocket.OPEN
         ) {
             return;
         }
 
 
         const data =
-            parseChatArticle(article);
+            extractData();
 
 
-        if (!data) {
-            return;
-        }
-
-
-        const fingerprint =
-            getFingerprint(data);
-
-
-        if (seenMessages.has(fingerprint)) {
-            return;
-        }
-
-
-        seenMessages.add(
-            fingerprint
-        );
+        const message =
+            createMessage(data);
 
 
         /*
-         * Prevent unlimited memory usage.
+         * Only transmit if something changed.
          */
 
-        if (seenMessages.size > 2000) {
-
-            const first =
-                seenMessages.values()
-                    .next()
-                    .value;
-
-
-            seenMessages.delete(
-                first
-            );
+        if (
+            message ===
+            previousData
+        ) {
+            return;
         }
 
 
-        sendToServer(data);
-    }
+        previousData =
+            message;
 
 
-    // ============================================================
-    // SCAN EXISTING CHAT
-    // ============================================================
-
-    function scanChat() {
-
-        const articles =
-            document.querySelectorAll(
-                "article.line"
-            );
+        socket.send(message);
 
 
-        for (const article of articles) {
-
-            processArticle(
-                article
-            );
-        }
-    }
-
-
-    // ============================================================
-    // MUTATION OBSERVER
-    // ============================================================
-
-    const observer =
-        new MutationObserver(
-            function (mutations) {
-
-                for (const mutation of mutations) {
-
-                    for (
-                        const node
-                        of mutation.addedNodes
-                    ) {
-
-                        if (
-                            node.nodeType !==
-                            Node.ELEMENT_NODE
-                        ) {
-                            continue;
-                        }
-
-
-                        // Direct article
-
-                        if (
-                            node.matches &&
-                            node.matches(
-                                "article.line"
-                            )
-                        ) {
-
-                            processArticle(
-                                node
-                            );
-                        }
-
-
-                        // Article inside added element
-
-                        if (
-                            node.querySelectorAll
-                        ) {
-
-                            const articles =
-                                node.querySelectorAll(
-                                    "article.line"
-                                );
-
-
-                            for (
-                                const article
-                                of articles
-                            ) {
-
-                                processArticle(
-                                    article
-                                );
-                            }
-                        }
-                    }
-                }
-            }
+        debugLog(
+            'Data sent:\n' +
+            message
         );
-
-
-    observer.observe(
-        document.body,
-        {
-            childList: true,
-            subtree: true
-        }
-    );
-
-
-    // ============================================================
-    // FALLBACK SCANNER
-    // ============================================================
-
-    setInterval(
-        scanChat,
-        SCAN_INTERVAL
-    );
+    }
 
 
     // ============================================================
@@ -659,7 +1618,28 @@
     // ============================================================
 
     console.log(
-        "[Hordes.io WS] Chat observer started."
+        '[Hordes.io WS] Script started'
+    );
+
+
+    console.log(
+        '[Hordes.io WS] Server: ' +
+        socketUrl
+    );
+
+
+    reconnectIfOffline();
+
+
+    setInterval(
+        reconnectIfOffline,
+        reconnectInterval
+    );
+
+
+    setInterval(
+        extractAndSendData,
+        dataCheckInterval
     );
 
 })();
